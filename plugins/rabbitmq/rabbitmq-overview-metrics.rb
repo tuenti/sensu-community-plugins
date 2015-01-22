@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+
 #
 # RabbitMQ Overview Metrics
 # ===
@@ -38,43 +39,49 @@ require 'socket'
 require 'carrot-top'
 
 class RabbitMQMetrics < Sensu::Plugin::Metric::CLI::Graphite
-
   option :host,
-    :description => "RabbitMQ management API host",
-    :long => "--host HOST",
-    :default => "localhost"
+         description: 'RabbitMQ management API host',
+         long: '--host HOST',
+         default: 'localhost'
 
   option :port,
-    :description => "RabbitMQ management API port",
-    :long => "--port PORT",
-    :proc => proc {|p| p.to_i},
-    :default => 55672
+         description: 'RabbitMQ management API port',
+         long: '--port PORT',
+         proc: proc(&:to_i),
+         default: 15_672
 
   option :user,
-    :description => "RabbitMQ management API user",
-    :long => "--user USER",
-    :default => "guest"
+         description: 'RabbitMQ management API user',
+         long: '--user USER',
+         default: 'guest'
 
   option :password,
-    :description => "RabbitMQ management API password",
-    :long => "--password PASSWORD",
-    :default => "guest"
+         description: 'RabbitMQ management API password',
+         long: '--password PASSWORD',
+         default: 'guest'
 
   option :scheme,
-    :description => "Metric naming scheme, text to prepend to $queue_name.$metric",
-    :long => "--scheme SCHEME",
-    :default => "#{Socket.gethostname}.rabbitmq"
+         description: 'Metric naming scheme, text to prepend to $queue_name.$metric',
+         long: '--scheme SCHEME',
+         default: "#{Socket.gethostname}.rabbitmq"
 
-  def get_rabbitmq_info
+  option :ssl,
+         description: 'Enable SSL for connection to the API',
+         long: '--ssl',
+         boolean: true,
+         default: false
+
+  def acquire_rabbitmq_info
     begin
       rabbitmq_info = CarrotTop.new(
-        :host => config[:host],
-        :port => config[:port],
-        :user => config[:user],
-        :password => config[:password]
+        host: config[:host],
+        port: config[:port],
+        user: config[:user],
+        password: config[:password],
+        ssl: config[:ssl]
       )
     rescue
-      warning "could not get rabbitmq info"
+      warning 'could not get rabbitmq info'
     end
     rabbitmq_info
   end
@@ -82,49 +89,51 @@ class RabbitMQMetrics < Sensu::Plugin::Metric::CLI::Graphite
   def run
     timestamp = Time.now.to_i
 
-    rabbitmq = get_rabbitmq_info
+    rabbitmq = acquire_rabbitmq_info
     overview = rabbitmq.overview
 
     # overview['queue_totals']['messages']
-    output "#{config[:scheme]}.queue_totals.messages.count", overview['queue_totals']['messages'], timestamp
-    output "#{config[:scheme]}.queue_totals.messages.rate", overview['queue_totals']['messages_details']['rate'], timestamp
+    if overview.key?('queue_totals') && !overview['queue_totals'].empty?
+      output "#{config[:scheme]}.queue_totals.messages.count", overview['queue_totals']['messages'], timestamp
+      output "#{config[:scheme]}.queue_totals.messages.rate", overview['queue_totals']['messages_details']['rate'], timestamp
 
-    # overview['queue_totals']['messages_unacknowledged']
-    output "#{config[:scheme]}.queue_totals.messages_unacknowledged.count", overview['queue_totals']['messages_unacknowledged'], timestamp
-    output "#{config[:scheme]}.queue_totals.messages_unacknowledged.rate", overview['queue_totals']['messages_unacknowledged_details']['rate'], timestamp
+      # overview['queue_totals']['messages_unacknowledged']
+      output "#{config[:scheme]}.queue_totals.messages_unacknowledged.count", overview['queue_totals']['messages_unacknowledged'], timestamp
+      output "#{config[:scheme]}.queue_totals.messages_unacknowledged.rate", overview['queue_totals']['messages_unacknowledged_details']['rate'], timestamp
 
-    # overview['queue_totals']['messages_ready']
-    output "#{config[:scheme]}.queue_totals.messages_ready.count", overview['queue_totals']['messages_ready'], timestamp
-    output "#{config[:scheme]}.queue_totals.messages_ready.rate", overview['queue_totals']['messages_ready_details']['rate'], timestamp
-
-    # overview['message_stats']['publish']
-    if overview['message_stats'].include?('publish')
-      output "#{config[:scheme]}.message_stats.publish.count", overview['message_stats']['publish'], timestamp
-    end
-    if overview['message_stats'].include?('publish_details') and
-       overview['message_stats']['publish_details'].include?('rate')
-      output "#{config[:scheme]}.message_stats.publish.rate", overview['message_stats']['publish_details']['rate'], timestamp
+      # overview['queue_totals']['messages_ready']
+      output "#{config[:scheme]}.queue_totals.messages_ready.count", overview['queue_totals']['messages_ready'], timestamp
+      output "#{config[:scheme]}.queue_totals.messages_ready.rate", overview['queue_totals']['messages_ready_details']['rate'], timestamp
     end
 
-    # overview['message_stats']['deliver_no_ack']
-    if overview['message_stats'].include?('deliver_no_ack')
-      output "#{config[:scheme]}.message_stats.deliver_no_ack.count", overview['message_stats']['deliver_no_ack'], timestamp
-    end
-    if overview['message_stats'].include?('deliver_no_ack_details') and
-       overview['message_stats']['deliver_no_ack_details'].include?('rate')
-      output "#{config[:scheme]}.message_stats.deliver_no_ack.rate", overview['message_stats']['deliver_no_ack_details']['rate'], timestamp
-    end
+    if overview.key?('message_stats') && !overview['message_stats'].empty?
+      # overview['message_stats']['publish']
+      if overview['message_stats'].include?('publish')
+        output "#{config[:scheme]}.message_stats.publish.count", overview['message_stats']['publish'], timestamp
+      end
+      if overview['message_stats'].include?('publish_details') &&
+         overview['message_stats']['publish_details'].include?('rate')
+        output "#{config[:scheme]}.message_stats.publish.rate", overview['message_stats']['publish_details']['rate'], timestamp
+      end
 
-    # overview['message_stats']['deliver_get']
-    if overview['message_stats'].include?('deliver_get')
-      output "#{config[:scheme]}.message_stats.deliver_get.count", overview['message_stats']['deliver_get'], timestamp
-    end
-    if overview['message_stats'].include?('deliver_get_details') and
-       overview['message_stats']['deliver_get_details'].include?('rate')
-      output "#{config[:scheme]}.message_stats.deliver_get.rate", overview['message_stats']['deliver_get_details']['rate'], timestamp
-    end
+      # overview['message_stats']['deliver_no_ack']
+      if overview['message_stats'].include?('deliver_no_ack')
+        output "#{config[:scheme]}.message_stats.deliver_no_ack.count", overview['message_stats']['deliver_no_ack'], timestamp
+      end
+      if overview['message_stats'].include?('deliver_no_ack_details') &&
+         overview['message_stats']['deliver_no_ack_details'].include?('rate')
+        output "#{config[:scheme]}.message_stats.deliver_no_ack.rate", overview['message_stats']['deliver_no_ack_details']['rate'], timestamp
+      end
 
+      # overview['message_stats']['deliver_get']
+      if overview['message_stats'].include?('deliver_get')
+        output "#{config[:scheme]}.message_stats.deliver_get.count", overview['message_stats']['deliver_get'], timestamp
+      end
+      if overview['message_stats'].include?('deliver_get_details') &&
+         overview['message_stats']['deliver_get_details'].include?('rate')
+        output "#{config[:scheme]}.message_stats.deliver_get.rate", overview['message_stats']['deliver_get_details']['rate'], timestamp
+      end
+    end
     ok
   end
-
 end
