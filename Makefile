@@ -1,8 +1,8 @@
-VERSION=2.0
+VERSION=2.1
 TARGET=deb
 LOGLEVEL="warn"
 NAME=sensu-community-plugins
-PREFIX=/etc/sensu/plugins
+PREFIX=/etc/sensu
 MAINTAINER="$(shell git config user.email)"
 VENDOR="Community"
 URL=$(shell git config remote.origin.url)
