@@ -1,4 +1,4 @@
-VERSION=2.1
+VERSION=2.2
 TARGET=deb
 LOGLEVEL="warn"
 NAME=sensu-community-plugins
@@ -21,4 +21,4 @@ clean:
 	@rm -f $(NAME)_$(VERSION)*.$(TARGET)
 
 package: $(SOURCES)
-	@fpm -t $(TARGET) -s dir --prefix $(PREFIX) --log $(LOGLEVEL) --force --name $(NAME) --version $(VERSION) --license $(LICENSE) --vendor $(VENDOR) --url $(URL) --maintainer $(MAINTAINER) --description $(DESCRIPTION) --category $(CATEGORY) $?
+	@fpm -t $(TARGET) -s dir --prefix $(PREFIX) --log $(LOGLEVEL) --force --name $(NAME) --version $(VERSION) --license $(LICENSE) --vendor $(VENDOR) --url $(URL) --maintainer $(MAINTAINER) --description $(DESCRIPTION) --category $(CATEGORY) -a all $?
