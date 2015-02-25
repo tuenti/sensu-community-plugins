@@ -58,8 +58,8 @@ class CheckProcessSwap < Sensu::Plugin::Check::CLI
   end
 
   def is_swapping(pid)
-    swap_entries = File.read("/proc/#{pid}/smaps").split("\n").grep(/^Swap/)
-    swap_entries.select {|line| line.split[1].to_i != 0 }.length > 0
+    vm_swap = File.read("/proc/#{pid}/status").grep(/^VmSwap:/)[0].split[1].to_i
+    vm_swap > 0
   end
 
   def run
