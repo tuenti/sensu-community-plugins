@@ -16,8 +16,26 @@ require 'sensu-handler'
 require 'json'
 
 class Slack < Sensu::Handler
+  option :json_config,
+         description: 'Configuration name',
+         short: '-j JSONCONFIG',
+         long: '--json JSONCONFIG',
+         default: 'slack'
+
   def slack_webhook_url
     get_setting('webhook_url')
+  end
+
+  def slack_channel
+    get_setting('channel')
+  end
+
+  def slack_proxy_addr
+    get_setting('proxy_addr')
+  end
+
+  def slack_proxy_port
+    get_setting('proxy_port')
   end
 
   def slack_message_prefix
@@ -32,22 +50,26 @@ class Slack < Sensu::Handler
     get_setting('surround')
   end
 
+  def markdown_enabled
+    get_setting('markdown_enabled') || true
+  end
+
   def incident_key
     @event['client']['name'] + '/' + @event['check']['name']
   end
 
   def get_setting(name)
-    settings['slack'][name]
+    settings[config[:json_config]][name]
   end
 
   def handle
-    description = @event['notification'] || build_description
-    post_data("#{incident_key}: #{description}")
+    description = @event['check']['notification'] || build_description
+    post_data("*Check*\n#{incident_key}\n\n*Description*\n#{description}")
   end
 
   def build_description
     [
-      @event['check']['output'],
+      @event['check']['output'].strip,
       @event['client']['address'],
       @event['client']['subscriptions'].join(',')
     ].join(' : ')
@@ -55,12 +77,18 @@ class Slack < Sensu::Handler
 
   def post_data(notice)
     uri = URI(slack_webhook_url)
-    http = Net::HTTP.new(uri.host, uri.port)
+
+    if (defined?(slack_proxy_addr)).nil?
+      http = Net::HTTP.new(uri.host, uri.port)
+    else
+      http = Net::HTTP::Proxy(slack_proxy_addr, slack_proxy_port).new(uri.host, uri.port)
+    end
+
     http.use_ssl = true
 
     req = Net::HTTP::Post.new("#{uri.path}?#{uri.query}")
     text = slack_surround ? slack_surround + notice + slack_surround : notice
-    req.body = "payload=#{payload(text).to_json}"
+    req.body = payload(text).to_json
 
     response = http.request(req)
     verify_response(response)
@@ -83,7 +111,9 @@ class Slack < Sensu::Handler
         color: color
       }]
     }.tap do |payload|
+      payload[:channel] = slack_channel if slack_channel
       payload[:username] = slack_bot_name if slack_bot_name
+      payload[:attachments][0][:mrkdwn_in] = %w(text) if markdown_enabled
     end
   end
 
