@@ -148,7 +148,7 @@ class CheckProcs < Sensu::Plugin::Check::CLI
   option :external_encoding,
          long: '--external_encoding ENCODING',
          description: 'External encoding to parse the output of the process list',
-         default: Encoding::UTF_8.name
+         default: Encoding::ISO_8859_1.name
 
   def read_pid(path)
     if File.exist?(path)
