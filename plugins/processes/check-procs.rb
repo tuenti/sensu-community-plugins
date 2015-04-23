@@ -145,6 +145,11 @@ class CheckProcs < Sensu::Plugin::Check::CLI
          proc: proc(&:to_i),
          description: 'Match processes cpu time that is younger than this, in SECONDS'
 
+  option :external_encoding,
+         long: '--external_encoding ENCODING',
+         description: 'External encoding to parse the output of the process list',
+         default: Encoding::UTF_8.name
+
   def read_pid(path)
     if File.exist?(path)
       File.read(path).strip.to_i
@@ -154,7 +159,7 @@ class CheckProcs < Sensu::Plugin::Check::CLI
   end
 
   def read_lines(cmd)
-    IO.popen(cmd + ' 2>&1') do |child|
+    IO.popen(cmd + ' 2>&1', external_encoding: config[:external_encoding]) do |child|
       child.read.split("\n")
     end
   end
