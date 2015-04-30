@@ -84,9 +84,9 @@ class CheckRaid < Sensu::Plugin::Check::CLI
     # #YELLOW
     if File.exist?('/usr/sbin/megacli')  # rubocop:disable GuardClause
       contents = `sudo /usr/sbin/megacli -AdpAllInfo -aALL -nolog`
-      c = contents.lines.grep(/(Critical|Failed) Disks\s+\: 0/)
+      c = contents.lines.grep(/(Critical|Failed) Disks\s+\:/).select { |line| line.strip !~ / 0$/ }
       # #YELLOW
-      unless c.empty?   # rubocop:disable UnlessElse
+      if c.empty?
         ok 'MegaRaid RAID OK'
       else
         warning 'MegaRaid RAID warning'
