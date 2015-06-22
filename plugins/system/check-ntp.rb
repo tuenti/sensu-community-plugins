@@ -41,8 +41,9 @@ class CheckNTP < Sensu::Plugin::Check::CLI
   def run
     begin
       output = `ntpq -c "rv 0 stratum,offset"`
-      stratum = output.split(',')[0].split('=')[1].strip.to_i
-      offset = output.split(',')[1].split('=')[1].strip.to_f
+      match_pattern = '^stratum=[0-9]+, offset=(\-)?[0-9]+'
+      stratum = /#{match_pattern}/.match(output).to_s.split(',')[0].split('=')[1].strip.to_i
+      offset = /#{match_pattern}/.match(output).to_s.split(',')[1].split('=')[1].strip.to_f
     rescue
       unknown 'NTP command Failed'
     end
