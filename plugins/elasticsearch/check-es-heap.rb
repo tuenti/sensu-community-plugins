@@ -26,11 +26,13 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/check/cli'
 require 'rest-client'
 require 'json'
 
+#
+# ES Heap
+#
 class ESHeap < Sensu::Plugin::Check::CLI
   option :host,
          description: 'Elasticsearch host',
@@ -78,7 +80,7 @@ class ESHeap < Sensu::Plugin::Check::CLI
   end
 
   def acquire_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}/#{resource}", timeout: config[:timeout])
+    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout])
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
@@ -88,12 +90,12 @@ class ESHeap < Sensu::Plugin::Check::CLI
     warning 'Elasticsearch API returned invalid JSON'
   end
 
-  def acquire_heap_data(return_max = false)
+  def acquire_heap_data(return_max = false) # rubocop:disable all
     if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      stats = acquire_es_resource('_nodes/_local/stats?jvm=true')
+      stats = acquire_es_resource('/_nodes/_local/stats?jvm=true')
       node = stats['nodes'].keys.first
     else
-      stats = acquire_es_resource('_cluster/nodes/_local/stats?jvm=true')
+      stats = acquire_es_resource('/_cluster/nodes/_local/stats?jvm=true')
       node = stats['nodes'].keys.first
     end
     begin
@@ -107,7 +109,7 @@ class ESHeap < Sensu::Plugin::Check::CLI
     end
   end
 
-  def run
+  def run # rubocop:disable all
     if config[:percentage]
       heap_used, heap_max = acquire_heap_data(true)
       heap_used_ratio = ((100 * heap_used) / heap_max).to_i
