@@ -1,5 +1,4 @@
 #! /usr/bin/env ruby
-# encoding: UTF-8
 #
 #   es-node-metrics
 #
@@ -16,6 +15,7 @@
 #
 # DEPENDENCIES:
 #   gem: sensu-plugin
+#   gem: rest-client
 #
 # USAGE:
 #   #YELLOW
@@ -28,11 +28,13 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/metric/cli'
 require 'rest-client'
 require 'json'
 
+#
+# ES Node Metrics
+#
 class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :scheme,
          description: 'Metric naming scheme, text to prepend to queue_name.metric',
@@ -53,28 +55,9 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
          proc: proc(&:to_i),
          default: 9200
 
-  def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}/#{resource}", timeout: config[:timeout])
-    JSON.parse(r.get)
-  rescue Errno::ECONNREFUSED
-    warning 'Connection refused'
-  rescue RestClient::RequestTimeout
-    warning 'Connection timed out'
-  end
-
-  def acquire_es_version
-    info = get_es_resource('/')
-    info['version']['number']
-  end
-
-  def run
-    if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      ln = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_nodes/_local", timeout: 30
-      stats = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_nodes/stats", timeout: 30
-    else
-      ln = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_cluster/nodes/_local", timeout: 30
-      stats = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_cluster/nodes/_local/stats", timeout: 30
-    end
+  def run # rubocop:disable all
+    ln = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_cluster/nodes/_local", timeout: 30
+    stats = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_cluster/nodes/_local/stats", timeout: 30
     ln = JSON.parse(ln.get)
     stats = JSON.parse(stats.get)
     timestamp = Time.now.to_i
@@ -86,12 +69,7 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
     metrics['process.mem.resident_in_bytes'] = node['process']['mem']['resident_in_bytes']
     metrics['jvm.mem.heap_used_in_bytes'] = node['jvm']['mem']['heap_used_in_bytes']
     metrics['jvm.mem.non_heap_used_in_bytes'] = node['jvm']['mem']['non_heap_used_in_bytes']
-    if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      metrics['jvm.gc.collectors.young.collection_time'] = node['jvm']['gc']['collectors']['young']['collection_time_in_millis']
-      metrics['jvm.gc.collectors.old.collection_time'] = node['jvm']['gc']['collectors']['old']['collection_time_in_millis']
-    else
-      metrics['jvm.gc.collection_time_in_millis'] = node['jvm']['gc']['collection_time_in_millis']
-    end
+    metrics['jvm.gc.collection_time_in_millis'] = node['jvm']['gc']['collection_time_in_millis']
     metrics.each do |k, v|
       output([config[:scheme], k].join('.'), v, timestamp)
     end

@@ -14,7 +14,6 @@
 # DEPENDENCIES:
 #   gem: sensu-plugin
 #   gem: rest-client
-#   gem: json
 #
 # USAGE:
 #   #YELLOW
@@ -36,12 +35,14 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/metric/cli'
 require 'rest-client'
 require 'json'
 
-class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
+#
+# ES Node Graphite Metrics
+#
+class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :scheme,
          description: 'Metric naming scheme, text to prepend to queue_name.metric',
          short: '-s SCHEME',
@@ -93,7 +94,7 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
          default: false
 
   def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:server]}:#{config[:port]}/#{resource}?pretty", timeout: config[:timeout])
+    r = RestClient::Resource.new("http://#{config[:server]}:#{config[:port]}#{resource}?pretty", timeout: config[:timeout])
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
@@ -106,7 +107,7 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
     info['version']['number']
   end
 
-  def run
+  def run # rubocop:disable all
     # invert various stats depending on if some flags are set
     os_stat = !config[:disable_os_stats]
     process_stats = !config[:disable_process_stats]
@@ -138,9 +139,9 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
     end
 
     if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      stats = get_es_resource("_nodes/_local/stats?#{stats_query_string}")
+      stats = get_es_resource("/_nodes/_local/stats?#{stats_query_string}")
     else
-      stats = get_es_resource("_cluster/nodes/_local/stats?#{stats_query_string}")
+      stats = get_es_resource("/_cluster/nodes/_local/stats?#{stats_query_string}")
     end
 
     timestamp = Time.now.to_i
@@ -190,7 +191,7 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
       metrics['jvm.threads.peak_count']           = node['jvm']['threads']['peak_count']
     end
 
-    node['indices'].each do |type,  index|
+    node['indices'].each do |type, index|
       index.each do |k, v|
         # #YELLOW
         unless k =~ /(_time$)/ || v =~ /\d+/ # rubocop:disable IfUnlessModifier

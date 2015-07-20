@@ -13,7 +13,6 @@
 #
 # DEPENDENCIES:
 #   gem: sensu-plugin
-#   gem: json
 #   gem: rest-client
 #
 # USAGE:
@@ -27,12 +26,14 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/check/cli'
 require 'rest-client'
 require 'json'
 
-class ESClusterStatus < Sensu::Plugin::Check::CLI
+#
+# ES File Descriptiors
+#
+class ESFileDescriptors < Sensu::Plugin::Check::CLI
   option :host,
          description: 'Elasticsearch host',
          short: '-h HOST',
@@ -66,7 +67,7 @@ class ESClusterStatus < Sensu::Plugin::Check::CLI
          default: 80
 
   def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}/#{resource}", timeout: config[:timeout])
+    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout])
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
@@ -94,7 +95,7 @@ class ESClusterStatus < Sensu::Plugin::Check::CLI
     end
   end
 
-  def run
+  def run # rubocop:disable all
     open = acquire_open_fds
     max = acquire_max_fds
     used_percent = ((open.to_f / max.to_f) * 100).to_i
