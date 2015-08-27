@@ -70,12 +70,12 @@ class PCPResponse
   BACKEND   = 12   # PCP process error on the server (specifying an invalid ID, etc.)
   AUTH      = 13   # Authorization failure
 
-  attr_reader :status, :data
+  attr_reader :status, :node_info
 
   def initialize(node_id, command)
 
-    @status = command.exitstatus
-    @data   = if @status == 0 
+    @status    = command.exitstatus
+    @node_info = if @status == 0 
       PCPNodeInfo.build_from_raw_data(node_id, command.stdout)
     else 
       command.stderr
@@ -147,10 +147,7 @@ class PCPWrapper
 
   def get_all_nodes_information
 
-    response = []
-
-    @number_of_nodes.times { |node_id| response << get_node_information(node_id) }
-    response
+    @number_of_nodes.times.map { |id| get_node_information(id) }
   end
 end
 
