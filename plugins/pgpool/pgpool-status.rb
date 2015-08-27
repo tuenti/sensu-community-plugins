@@ -22,9 +22,9 @@ class PCPNodeInfo
   UP                = 2 # Node is up. Connections are pooled.
   DOWN              = 3 # Node is down.
 
-  def self.build_from_raw_data(id, data)
+  def self.build_from_raw_data(id, command_raw_data)
 
-    host, port, status, weight = data.split(' ')
+    host, port, status, weight = command_raw_data.split(' ')
 
     PCPNodeInfo.new(id, host, port, weight, status)
   end
@@ -204,7 +204,7 @@ class CheckPGPool < Sensu::Plugin::Check::CLI
 
     pcp_wrapper           = PCPWrapper.new(config)
     pcp_status            = pcp_wrapper.get_all_nodes_information
-    nodes_down            = pcp_status.count { |n| n.data.is_down? }
+    nodes_down            = pcp_status.count { |n| n.node_info.is_down? }
     percentage_nodes_down = nodes_down * 100 / pcp_wrapper.number_of_nodes
 
     critical "#{percentage_nodes_down}% of the nodes are down" if percentage_nodes_down >= config[:critical].to_i
