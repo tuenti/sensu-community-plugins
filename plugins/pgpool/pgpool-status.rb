@@ -43,7 +43,7 @@ class PCPNodeInfo
   end
 
   def is_up?
-    @status != DOWN
+    (@status == UP || @status == UP_NO_CONNECTIONS)
   end
 
   def is_down?
@@ -166,7 +166,7 @@ class CheckPGPool < Sensu::Plugin::Check::CLI
   option :timeout,
          description: 'PCP command timemout',
          short:       '-t TIMEOUT',
-         long:        '--timeount TIMEOUT',
+         long:        '--timeout TIMEOUT',
          default:     DEFAULT_TIMEOUT
 
   option :hostname,
@@ -202,35 +202,18 @@ class CheckPGPool < Sensu::Plugin::Check::CLI
          short:       '-c PERCENTAGE',
          long:        '--critical PERCENTAJE',
          default:     DEFAULT_CRITICAL_THRESOLD
-
+  
   def run
-
-    critical_threshold    = config[:critical].to_i rescue DEFAULT_CRITICAL_THRESHOLD
-    warning_threshold     = config[:warning].to_i  rescue DEFAULT_WARNING_THRESHOLD
-
-    puts critical_threshold
-    puts warning_threshold
 
     pcp_wrapper           = PCPWrapper.new(config)
     pcp_status            = pcp_wrapper.get_all_nodes_information
-
-    nodes_down            = pcp_status.count { |node| node.data.is_down? }
+    nodes_down            = pcp_status.count { |n| n.data.is_down? }
     percentage_nodes_down = nodes_down * 100 / pcp_wrapper.number_of_nodes
 
-    $stderr.puts "Status:"
-    $stderr.puts "  total backend nodes:  #{pcp_wrapper.number_of_nodes}"
-    $stderr.puts "  number of nodes down: #{nodes_down}"
-    $stderr.puts "  down:                 #{percentage_nodes_down}%"
-    $stderr.puts
-    
-    if percentage_nodes_down >= critical_threshold
-      critical "#{percentage_nodes_down}% of the nodes are down"
-    elsif percentage_nodes_down >= warning_threshold
-      warning "#{percentage_nodes_down}% of the nodes are down"
-    else
-      ok "#{percentage_nodes_down}% of the nodes are down"
-    end
-# rescue Exception => e
-#   unknown "Error: #{e.message}"
+    critical "#{percentage_nodes_down}% of the nodes are down" if percentage_nodes_down >= config[:critical].to_i
+    warning  "#{percentage_nodes_down}% of the nodes are down" if percentage_nodes_down >= config[:warning].to_i
+    ok       "#{percentage_nodes_down}% of the nodes are down"
+  rescue => e
+    unknown "Error: #{e.message}"
   end
 end
