@@ -16,37 +16,34 @@ require 'mixlib/shellout'
 #
 # = class: PCPNodeInfo, PORO
 class PCPNodeInfo
-
-  INITIALIZING      = 0 # This state is only used during the initialization. PCP will never display it.
+  INITIALIZING      = 0 # This state is only used during the initialization.
   UP_NO_CONNECTIONS = 1 # Node is up. No connections yet.
   UP                = 2 # Node is up. Connections are pooled.
   DOWN              = 3 # Node is down.
 
   def self.build_from_raw_data(id, command_raw_data)
-
     host, port, status, weight = command_raw_data.split(' ')
 
     PCPNodeInfo.new(id, host, port, weight, status)
   end
 
-  attr_reader :id, :host, :port, :weight, :status
-
   def initialize(id, host, port, weight, status)
-
     @id     = id
     @host   = host
     @port   = port.to_i
     @weight = weight.to_f
     @status = status.to_i
- 
+
     self
   end
 
-  def is_up?
+  attr_reader :id, :host, :port, :weight, :status
+
+  def up?
     (@status == UP || @status == UP_NO_CONNECTIONS)
   end
 
-  def is_down?
+  def down?
     @status == DOWN
   end
 end
@@ -54,7 +51,6 @@ end
 #
 # = class: PCPResponse
 class PCPResponse
-
   OK        = 0
   UNKNOWN   = 1    # Unknown Error (should not occur)
   EOF       = 2    # EOF Error
@@ -70,19 +66,14 @@ class PCPResponse
   BACKEND   = 12   # PCP process error on the server (specifying an invalid ID, etc.)
   AUTH      = 13   # Authorization failure
 
-  attr_reader :status, :node_info
-
   def initialize(node_id, command)
-
     @status    = command.exitstatus
-    @node_info = if @status == 0 
-      PCPNodeInfo.build_from_raw_data(node_id, command.stdout)
-    else 
-      command.stderr
-    end
+    @node_info = @status == 0 ? PCPNodeInfo.build_from_raw_data(node_id, command.stdout) : command.stderr
 
     self
   end
+
+  attr_reader :status, :node_info
 
   def success?
     @status == OK
@@ -92,68 +83,73 @@ end
 #
 # = class: PCPWraper, a simple wrapper over de pgPool management command line utilities
 class PCPWrapper
-
   DEFAULT_TIMEOUT    = 10
   DEFAULT_PREFIX     = '/usr/sbin'
   PCP_NODE_COUNT_EXE = 'pcp_node_count'
   PCP_NODE_INFO_EXE  = 'pcp_node_info'
   INVALID_NODE_ID    = 99
 
-  attr_reader :number_of_nodes
+  private
 
-  def initialize(parameters)
-
-    parameters = { 
-      prefix:  DEFAULT_PREFIX,
-      timeout: DEFAULT_TIMEOUT 
-    }.merge(parameters)
-
-    @hostname            = parameters[:hostname]
-    @port                = parameters[:port]
-    @user                = parameters[:user]
-    @password            = parameters[:password]
-    @timeout             = parameters[:timeout]
-    @pcp_command_options = "#{@timeout} #{@hostname} #{@port} #{@user} #{@password}"
-    @pcp_node_count_exe  = File.join(parameters[:prefix], PCP_NODE_COUNT_EXE)
-    @pcp_node_info_exe   = File.join(parameters[:prefix], PCP_NODE_INFO_EXE)
-    @number_of_nodes     = get_number_of_nodes 
-
-    self
-  end
-
-  def get_number_of_nodes
-
-    pcp_node_count = Mixlib::ShellOut.new("#{@pcp_node_count_exe} #{@pcp_command_options}")
+  def extract_number_of_nodes
+    pcp_node_count = Mixlib::ShellOut.new(@pcp_node_count_command)
 
     pcp_node_count.run_command
     pcp_node_count.error!
     pcp_node_count.stdout.to_i
   end
 
-  def is_a_valid_node_id?(node_id)
-    (0..@number_of_nodes-1) === node_id
+  public
+
+  def initialize(parameters)
+    parameters = { prefix: DEFAULT_PREFIX, timeout: DEFAULT_TIMEOUT }.merge(parameters)
+
+    @hostname  = parameters[:hostname]
+    @port      = parameters[:port]
+    @user      = parameters[:user]
+    @password  = parameters[:password]
+    @timeout   = parameters[:timeout]
+
+    @pcp_command_options    = "#{@timeout} #{@hostname} #{@port} #{@user} #{@password}"
+    @pcp_node_count_command = "#{File.join(parameters[:prefix], PCP_NODE_COUNT_EXE)} #{@pcp_command_options}"
+    @pcp_node_info_command  = "#{File.join(parameters[:prefix], PCP_NODE_INFO_EXE)} #{@pcp_command_options}"
+    @number_of_nodes        = extract_number_of_nodes
+
+    self
   end
 
-  def get_node_information(node_id)
+  attr_reader :number_of_nodes
 
-    raise StandardError.new("Invalid node id(#{node_id}) must be between 0 and #{@number_of_nodes-1}") unless is_a_valid_node_id?(node_id)
+  def valid_node_id?(node_id)
+    node_id >= 0 && node_id < @number_of_nodes
+  end
 
-    pcp_node_info = Mixlib::ShellOut.new("#{@pcp_node_info_exe} #{@pcp_command_options} #{node_id}")
+  def node_information(node_id)
+    fail("Invalid node id(#{node_id}) must be between 0 and #{@number_of_nodes - 1}") unless valid_node_id?(node_id)
+
+    pcp_node_info = Mixlib::ShellOut.new("#{@pcp_node_info_command} #{node_id}")
+
     pcp_node_info.run_command
     pcp_node_info.error!
 
-    PCPResponse.new(node_id, pcp_node_info) 
+    PCPResponse.new(node_id, pcp_node_info)
   end
 
-  def get_all_nodes_information
-
-    @number_of_nodes.times.map { |id| get_node_information(id) }
+  def nodes_information
+    @number_of_nodes.times.map { |node_id| node_information(node_id) }
   end
 end
 
+# A bit of spicy monkey patching
+class String
+  def percentage?
+    /\A[-+]?\d+\z/ =~ self && to_i >= 0 && to_i <= 100
+  end
+end
 
+#
+# = class: CheckPGPool the sensu check
 class CheckPGPool < Sensu::Plugin::Check::CLI
-
   DEFAULT_TIMEOUT           = 10
   DEFAULT_HOSTNAME          = 'localhost'
   DEFAULT_PORT              = 9898
@@ -169,7 +165,7 @@ class CheckPGPool < Sensu::Plugin::Check::CLI
   option :hostname,
          description: 'PCP Hostname',
          short:       '-h HOST',
-         long:        '--hostname HOST',
+         long:        '--hostname HOSTNAME',
          default:     DEFAULT_HOSTNAME
 
   option :port,
@@ -185,32 +181,35 @@ class CheckPGPool < Sensu::Plugin::Check::CLI
 
   option :password,
          description: 'PCP Password',
-         short:       '-p PASS',
-         long:        '--password PASS'
+         short:       '-p PASSWORD',
+         long:        '--password PASSWORD'
 
   option :warning,
          description: 'Warning threshold',
          short:       '-w PERCENTAGE',
-         long:        '--warning PERCENTAJE',
+         long:        '--warning PERCENTAGE',
          default:     DEFAULT_WARNING_THRESOLD
 
   option :critical,
          description: 'Critical threshold',
          short:       '-c PERCENTAGE',
-         long:        '--critical PERCENTAJE',
+         long:        '--critical PERCENTAGE',
          default:     DEFAULT_CRITICAL_THRESOLD
-  
+
   def run
+    unknown("Invalid warning threshold value: #{config[:warning]}")   unless config[:warning].percentage?
+    unknown("Invalid critical threshold value: #{config[:critical]}") unless config[:critical].percentage?
 
     pcp_wrapper           = PCPWrapper.new(config)
-    pcp_status            = pcp_wrapper.get_all_nodes_information
-    nodes_down            = pcp_status.count { |n| n.node_info.is_down? }
-    percentage_nodes_down = nodes_down * 100 / pcp_wrapper.number_of_nodes
+    pcp_status            = pcp_wrapper.nodes_information
+    total_nodes           = pcp_wrapper.number_of_nodes
+    nodes_down            = pcp_status.count { |n| n.node_info.down? }
+    percentage_nodes_down = nodes_down * 100 / total_nodes
 
-    critical "#{percentage_nodes_down}% of the nodes are down" if percentage_nodes_down >= config[:critical].to_i
-    warning  "#{percentage_nodes_down}% of the nodes are down" if percentage_nodes_down >= config[:warning].to_i
-    ok       "#{percentage_nodes_down}% of the nodes are down"
-  rescue => e
-    unknown "Error: #{e.message}"
+    critical("#{percentage_nodes_down}% of the nodes are down (#{nodes_down}/#{total_nodes})") if percentage_nodes_down >= config[:critical].to_i
+    warning("#{percentage_nodes_down}% of the nodes are down (#{nodes_down}/#{total_nodes})")  if percentage_nodes_down >= config[:warning].to_i
+    ok("#{percentage_nodes_down}% of the nodes are down")
+  rescue => run_exception
+    unknown "Error: #{run_exception.message}"
   end
 end
