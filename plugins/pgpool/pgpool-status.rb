@@ -153,8 +153,8 @@ class CheckPGPool < Sensu::Plugin::Check::CLI
   DEFAULT_TIMEOUT           = 10
   DEFAULT_HOSTNAME          = 'localhost'
   DEFAULT_PORT              = 9898
-  DEFAULT_WARNING_THRESOLD  = 50
-  DEFAULT_CRITICAL_THRESOLD = 100
+  DEFAULT_WARNING_THRESOLD  = '50'
+  DEFAULT_CRITICAL_THRESOLD = '100'
 
   option :timeout,
          description: 'PCP command timemout',
