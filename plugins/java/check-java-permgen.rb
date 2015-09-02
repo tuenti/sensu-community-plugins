@@ -25,10 +25,12 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/check/cli'
 require 'English'
 
+#
+# Check Java
+#
 class CheckJavaPermGen < Sensu::Plugin::Check::CLI
   check_name 'Java PermGen'
 
