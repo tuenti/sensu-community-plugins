@@ -15,28 +15,6 @@ require 'mixlib/shellout'
 require 'vertica'
 
 #
-#
-class CheckResponseDetails
-
-  def initialize(options={ })
-
-    options = { result: :ok, roten_nodes: [] }
-
-    @result      = options[:result]
-    @roten_nodes = options[:roten_nodes]
-
-    self
-  end
-
-  def success?
-    @success == :ok
-  end
-
-  attr_accessor :result, :roten_nodes
-end
-
-
-#
 # = class: CheckVerticaCluster the sensu check
 class CheckVerticaCluster < Sensu::Plugin::Check::CLI
 
