@@ -14,6 +14,27 @@ require 'sensu-plugin/check/cli'
 require 'mixlib/shellout'
 require 'vertica'
 
+#
+#
+class CheckResponseDetails
+
+  def initialize(options={ })
+
+    options = { result: :ok, roten_nodes: [] }
+
+    @result      = options[:result]
+    @roten_nodes = options[:roten_nodes]
+
+    self
+  end
+
+  def success?
+    @success == :ok
+  end
+
+  attr_accessor :result, :roten_nodes
+end
+
 
 #
 # = class: CheckVerticaCluster the sensu check
@@ -58,12 +79,15 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
   end
 
   def warning?(nodes)
-
     nodes.rows.any? { |node| node[:node_state] =~ /(INITIALIZING|SHUTDOWN|READY|RECOVERING)/ }
   end
 
   def critical?(nodes)
     nodes.rows.any? { |node| node[:node_state] == 'DOWN' }
+  end
+
+  def get_roten_nodes(nodes)
+    nodes.rows.select { |node| node[:node_state] =~ /(DOWN|INITIALIZING|SHUTDOWN|READY|RECOVERING)/ }.map { |node| node[:node_name] }
   end
 
   def get_vertica_data(vertica_query)
@@ -84,10 +108,10 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
 
     nodes = get_vertica_data(DEFAULT_CLUSTER_QUERY)
 
-    critical("The cluster has node(s) DOWN") if critical?(nodes)
-    warning("The cluster has node(s) with undesirable states") if warning?(nodes)
+    critical("The cluster has node(s) DOWN: (#{get_roten_nodes(nodes)})") if critical?(nodes)
+    warning("The cluster has node(s) with undesirable states (#{get_roten_nodes(nodes)})") if warning?(nodes)
     ok("Your cluster is working like a charm") if ok?(nodes)
   rescue => run_exception
-    unknown("Error: #{run_exception.message}")
+    unknown("Error: #{run_exception.message} nodes status: #{get_roten_nodes(nodes)}")
   end
 end
