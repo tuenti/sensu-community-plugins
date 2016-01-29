@@ -14,6 +14,7 @@ require 'sensu-plugin/check/cli'
 require 'mixlib/shellout'
 require 'vertica'
 
+
 #
 # = class: CheckVerticaCluster the sensu check
 class CheckVerticaCluster < Sensu::Plugin::Check::CLI
@@ -57,6 +58,7 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
   end
 
   def warning?(nodes)
+
     nodes.rows.any? { |node| node[:node_state] =~ /(INITIALIZING|SHUTDOWN|READY|RECOVERING)/ }
   end
 
@@ -75,13 +77,7 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
       :row_style => :hash
     )
 
-    $stderr. puts vertica_connection.inspect if config[:debug]
-
-    vertica_nodes_data = vertica_connection.query(vertica_query)
-
-    $stderr. puts vertica_nodes_data.inspect if config[:debug]
-
-    vertica_nodes_data
+    vertica_connection.query(vertica_query)
   end
 
   def run
@@ -92,6 +88,6 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
     warning("The cluster has node(s) with undesirable states") if warning?(nodes)
     ok("Your cluster is working like a charm") if ok?(nodes)
   rescue => run_exception
-    unknown "Error: #{run_exception.message}"
+    unknown("Error: #{run_exception.message}")
   end
 end
