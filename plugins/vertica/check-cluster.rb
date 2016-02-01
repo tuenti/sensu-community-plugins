@@ -64,7 +64,7 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
   end
 
   def get_roten_nodes(nodes)
-    nodes.rows.select { |node| node[:node_state] =~ /(DOWN|INITIALIZING|SHUTDOWN|READY|RECOVERING)/ }.map { |node| node[:node_name] }
+    nodes.rows.select { |node| node[:node_state] =~ /(DOWN|INITIALIZING|SHUTDOWN|READY|RECOVERING)/ }.map { |node| "#{node[:node_name]}:#{node[:node_state]}" }
   end
 
   def get_vertica_data(vertica_query)
