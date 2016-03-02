@@ -81,7 +81,13 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
     vertica_connection.query(vertica_query)
   end
 
+  def valid_parameters?
+    config[:user] && config[:password] && config[:database]
+  end
+
   def run
+
+    unknown("Please, review your mandatory parameters: user, password, database") unless valid_parameters?
 
     nodes = get_vertica_data(DEFAULT_CLUSTER_QUERY)
 
@@ -89,7 +95,7 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
     warning("The cluster has node(s) with undesirable states (#{get_roten_nodes(nodes)})") if warning?(nodes)
     ok("Your cluster is working like a charm") if ok?(nodes)
   rescue => run_exception
-    unknown("Error: #{run_exception.message} nodes status: #{get_roten_nodes(nodes)}")
+    unknown("Error: #{run_exception.message}")
   end
 end
 
