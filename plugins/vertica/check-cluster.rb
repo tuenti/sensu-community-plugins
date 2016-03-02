@@ -89,7 +89,7 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
     warning("The cluster has node(s) with undesirable states (#{get_roten_nodes(nodes)})") if warning?(nodes)
     ok("Your cluster is working like a charm") if ok?(nodes)
   rescue => run_exception
-    unknown("Error: #{run_exception.message} nodes status: #{get_roten_nodes(nodes)}")
+    unknown("Error: #{run_exception.message}")
   end
 end
 
