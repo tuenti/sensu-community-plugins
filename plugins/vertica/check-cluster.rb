@@ -81,7 +81,13 @@ class CheckVerticaCluster < Sensu::Plugin::Check::CLI
     vertica_connection.query(vertica_query)
   end
 
+  def valid_parameters?
+    config[:user] && config[:password] && config[:database]
+  end
+
   def run
+
+    unknown("Please, review your mandatory parameters: user, password, database") unless valid_parameters?
 
     nodes = get_vertica_data(DEFAULT_CLUSTER_QUERY)
 
