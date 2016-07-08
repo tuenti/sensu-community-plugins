@@ -23,6 +23,7 @@
 #   Released under the same terms as Sensu (the MIT license); see LICENSE
 #   for details.
 #
+$LOAD_PATH.unshift(File.join(File.expand_path(File.dirname(__FILE__)), 'lib'))
 
 require 'sensu-plugin/metric/cli'
 require 'socket'
