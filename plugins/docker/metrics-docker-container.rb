@@ -24,12 +24,14 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/metric/cli'
 require 'socket'
 require 'pathname'
 require 'sys/proctable'
 
+#
+# Docker Container Metrics
+#
 class DockerContainerMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :scheme,
          description: 'Metric naming scheme, text to prepend to metric',
@@ -44,18 +46,24 @@ class DockerContainerMetrics < Sensu::Plugin::Metric::CLI::Graphite
          default: '/sys/fs/cgroup'
 
   option :docker_host,
-         description: 'docker host',
+         description: 'Docker host. TCP: "tcp://host:port" or Unix: "unix:///path/to/docker.sock" (default: "tcp://127.0.1.1:2376")',
          short: '-H DOCKER_HOST',
          long: '--docker-host DOCKER_HOST',
-         default: 'tcp://127.0.1.1:4243'
+         default: 'tcp://127.0.1.1:2376'
+
+  option :cgroup_template,
+         description: 'cgroup_template',
+         short: '-T <template string>',
+         long: '--cgroup-template template_string',
+         default: 'cpu/docker/%{container}/cgroup.procs'
 
   def run
     container_metrics
     ok
   end
 
-  def container_metrics
-    cgroup = Pathname(config[:cgroup_path]).join('cpu/docker')
+  def container_metrics #rubocop:disable all
+    cgroup = "#{config[:cgroup_path]}/#{config[:cgroup_template]}"
 
     timestamp = Time.now.to_i
     ps = Sys::ProcTable.ps.group_by(&:pid)
@@ -68,7 +76,8 @@ class DockerContainerMetrics < Sensu::Plugin::Metric::CLI::Graphite
     containers = `docker ps --quiet --no-trunc`.split("\n")
 
     containers.each do |container|
-      pids = cgroup.join(container).join('cgroup.procs').readlines.map(&:to_i)
+      path = Pathname(format(cgroup, container: container))
+      pids = path.readlines.map(&:to_i)
 
       processes = ps.values_at(*pids).flatten.compact.group_by(&:comm)
       processes2 = ps2.values_at(*pids).flatten.compact.group_by(&:comm)
