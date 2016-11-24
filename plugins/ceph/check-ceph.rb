@@ -23,6 +23,9 @@
 #   cluster. May need read access to ceph keyring and/or root access
 #   for authentication.
 #
+#   Using -u (--user) option allows to set the username to connect with
+#   the ceph cluster. By default the user is admin.
+#
 #   Using -i (--ignore-flags) option allows specific options that are
 #   normally considered Ceph warnings to be overlooked and considered
 #   as 'OK' (e.g. noscrub,nodeep-scrub).
@@ -43,11 +46,11 @@ require 'timeout'
 require 'English'
 
 class CheckCephHealth < Sensu::Plugin::Check::CLI
-  option :keyring,
-         description: 'Path to cephx authentication keyring file',
-         short: '-k KEY',
-         long: '--keyring',
-         proc: proc { |k| " -k #{k}" }
+  option :user,
+         description: 'Client name for authentication',
+         short: '-u USER',
+         long: '--user',
+         proc: proc { |u| " --user #{u}" }
 
   option :monitor,
          description: 'Optional monitor IP',
@@ -92,7 +95,7 @@ class CheckCephHealth < Sensu::Plugin::Check::CLI
     pipe, status = nil
     begin
       cmd += config[:cluster] if config[:cluster]
-      cmd += config[:keyring] if config[:keyring]
+      cmd += config[:user] if config[:user]
       cmd += config[:monitor] if config[:monitor]
       cmd += ' 2>&1'
       Timeout.timeout(config[:timeout]) do
