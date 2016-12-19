@@ -1,9 +1,10 @@
 #! /usr/bin/env ruby
 #  encoding: UTF-8
+#
 #  check-znode
 #
 # DESCRIPTION:
-# check if zookeeper znode exists and optionally match its contents
+#   check if zookeeper znode exists and optionally match its contents
 #
 # OUTPUT:
 #   check status (ok or critical)
@@ -28,7 +29,6 @@
 #   for details.
 #
 
-require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-plugin/check/cli'
 require 'zookeeper'
 
