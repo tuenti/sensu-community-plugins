@@ -84,6 +84,12 @@ class CheckCephHealth < Sensu::Plugin::Check::CLI
          boolean: true,
          default: false
 
+  option :show_stderr,
+         description: 'Show standard error from ceph commands',
+         long: '--stderr',
+         boolean: true,
+         default: false
+
   option :osd_tree,
          description: 'Show OSD tree on warns/errors (verbose!)',
          short: '-o',
@@ -97,7 +103,7 @@ class CheckCephHealth < Sensu::Plugin::Check::CLI
       cmd += config[:cluster] if config[:cluster]
       cmd += config[:user] if config[:user]
       cmd += config[:monitor] if config[:monitor]
-      cmd += ' 2>&1'
+      cmd += ' 2>&1' if config[:show_stderr]
       Timeout.timeout(config[:timeout]) do
         pipe = IO.popen(cmd)
         Process.wait(pipe.pid)
