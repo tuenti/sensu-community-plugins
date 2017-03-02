@@ -54,25 +54,25 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
   option :user,
          description: 'Client name for authentication',
          short: '-u USER',
-         long: '--user',
+         long: '--user USER',
          proc: proc { |u| " --user #{u}" }
 
   option :monitor,
          description: 'Optional monitor IP',
          short: '-m MON',
-         long: '--monitor',
+         long: '--monitor MON',
          proc: proc { |m| " -m #{m}" }
 
   option :cluster,
          description: 'Optional cluster name',
          short: '-c NAME',
-         long: '--cluster',
+         long: '--cluster NAME',
          proc: proc { |c| " --cluster=#{c}" }
 
   option :timeout,
          description: 'Timeout (default 10)',
          short: '-t SEC',
-         long: '--timeout',
+         long: '--timeout SEC',
          proc: proc(&:to_i),
          default: 10
 
@@ -84,7 +84,7 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
          default: 2
 
   option :crit,
-         short: '-c',
+         short: '-c CRIT',
          long: '--critical CRIT',
          description: 'Critical if the number of MDS daemons running are less than CRIT',
          proc: proc(&:to_f),

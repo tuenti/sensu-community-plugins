@@ -49,32 +49,32 @@ class CheckCephHealth < Sensu::Plugin::Check::CLI
   option :user,
          description: 'Client name for authentication',
          short: '-u USER',
-         long: '--user',
+         long: '--user USER',
          proc: proc { |u| " --user #{u}" }
 
   option :monitor,
          description: 'Optional monitor IP',
          short: '-m MON',
-         long: '--monitor',
+         long: '--monitor MON',
          proc: proc { |m| " -m #{m}" }
 
   option :cluster,
          description: 'Optional cluster name',
          short: '-c NAME',
-         long: '--cluster',
+         long: '--cluster NAME',
          proc: proc { |c| " --cluster=#{c}" }
 
   option :timeout,
          description: 'Timeout (default 10)',
          short: '-t SEC',
-         long: '--timeout',
+         long: '--timeout SEC',
          proc: proc(&:to_i),
          default: 10
 
   option :ignore_flags,
          description: 'Optional ceph warning flags to ignore',
          short: '-i FLAG[,FLAG]',
-         long: '--ignore-flags',
+         long: '--ignore-flags FLAG[,FLAG]',
          proc: proc { |f| f.split(',') }
 
   option :show_detail,
