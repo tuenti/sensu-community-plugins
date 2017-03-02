@@ -1,6 +1,6 @@
 #! /usr/bin/env ruby
 #
-# check-ceph
+# check-ceph-osd
 #
 # DESCRIPTION:
 #   #YELLOW
@@ -19,20 +19,34 @@
 #   #YELLOW
 #
 # NOTES:
-#   Runs 'ceph health' command(s) to report health status of ceph
-#   cluster. May need read access to ceph keyring and/or root access
+#   Runs 'ceph osd tree/stat' command(s) to report health status of
+#   OSD ceph daemons. May need read access to ceph keyring and/or root access
 #   for authentication.
 #
 #   Using -u (--user) option allows to set the username to connect with
 #   the ceph cluster. By default the user is admin.
 #
-#   Using -i (--ignore-flags) option allows specific options that are
-#   normally considered Ceph warnings to be overlooked and considered
-#   as 'OK' (e.g. noscrub,nodeep-scrub).
+#   Using -c (--cluster) option allows to set the cluster name to connect with
+#   the ceph cluster. By default the user is ceph.
 #
-#   Using -d (--detailed) and/or -o (--osd-tree) will dramatically increase
+#   Using -m (--monitor) option allows to set an option monitor IP address to
+#   connect with the ceph cluster.
+#
+#   Using -t (--timeout) option allows to set the timeout in seconds to
+#   execute the ceph commands. By default the timeout is 10 seconds.
+#
+#   Using --show_stderr option allows to be considered the standard error
+#   output when executing the check. By default this option is false.
+#
+#   Using -o (--osd-tree) will dramatically increase
 #   verboseness during warning/error reports, however they may add
 #   additional insights to cluster-related problems during notification.
+#
+#   Using --all option will check the percentage of the OSDs down or out
+#   in the whole cluster. By default this option is false.
+#
+#   Using --per_host option will check the percentage of the OSDs down or out
+#   in the whole cluster. By default this option is false.
 #
 # LICENSE:
 #   Copyright 2013 Brian Clark <brian.clark@cloudapt.com>
