@@ -1,4 +1,4 @@
-VERSION=2.3.21
+VERSION=2.3.22
 TARGET=deb
 LOGLEVEL="warn"
 NAME=sensu-community-plugins
