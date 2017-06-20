@@ -212,7 +212,7 @@ class CheckCephOSDHealth < Sensu::Plugin::Check::CLI
       message = "OSDs down #{down_osds.round(2)}% - OSDs out #{out_osds.round(2)}%\n"
     elsif config[:per_host]
       osd_hosts.each do |host, values|
-        message = "Host: #{host} OSDs Down: #{values['percentage_down'].round(2)}%\n"
+        message += "Host: #{host} OSDs Down: #{values['percentage_down'].round(2)}%\n" if values['percentage_down'] > 0
       end
     end
 
