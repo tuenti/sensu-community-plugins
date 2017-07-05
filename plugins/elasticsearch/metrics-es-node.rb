@@ -31,6 +31,7 @@
 require 'sensu-plugin/metric/cli'
 require 'rest-client'
 require 'json'
+require 'base64'
 
 #
 # ES Node Metrics
@@ -55,16 +56,67 @@ class ESMetrics < Sensu::Plugin::Metric::CLI::Graphite
          proc: proc(&:to_i),
          default: 9200
 
-  def run # rubocop:disable all
-    ln = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_cluster/nodes/_local", timeout: 30
-    stats = RestClient::Resource.new "http://#{config[:host]}:#{config[:port]}/_cluster/nodes/_local/stats", timeout: 30
-    ln = JSON.parse(ln.get)
-    stats = JSON.parse(stats.get)
+  option :user,
+         description: 'Elasticsearch User',
+         short: '-u USER',
+         long: '--user USER'
+
+  option :password,
+         description: 'Elasticsearch Password',
+         short: '-P PASS',
+         long: '--password PASS'
+
+  option :https,
+         description: 'Enables HTTPS',
+         short: '-e',
+         long: '--https'
+
+  def acquire_es_version
+    info = get_es_resource('/')
+    info['version']['number']
+  end
+
+  def get_es_resource(resource)
+    headers = {}
+    if config[:user] && config[:password]
+      auth = 'Basic ' + Base64.strict_encode64("#{config[:user]}:#{config[:password]}").chomp
+      headers = { 'Authorization' => auth }
+    end
+
+    protocol = if config[:https]
+                 'https'
+               else
+                 'http'
+               end
+
+    r = RestClient::Resource.new("#{protocol}://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout], headers: headers)
+    JSON.parse(r.get)
+  rescue Errno::ECONNREFUSED
+    warning 'Connection refused'
+  rescue RestClient::RequestTimeout
+    warning 'Connection timed out'
+  end
+
+  def run
+    es_version = Gem::Version.new(acquire_es_version)
+
+    if es_version >= Gem::Version.new('1.0.0')
+      ln = get_es_resource('/_nodes/_local')
+      stats = get_es_resource('/_nodes/_local/stats')
+    else
+      ln = get_es_resource('/_cluster/nodes/_local')
+      stats = get_es_resource('/_cluster/nodes/_local/stats')
+    end
+
     timestamp = Time.now.to_i
     node = stats['nodes'].values.first
     node['jvm']['mem']['heap_max_in_bytes'] = ln['nodes'].values.first['jvm']['mem']['heap_max_in_bytes']
     metrics = {}
-    metrics['os.load_average'] = node['os']['load_average'][0]
+    metrics['os.load_average'] = if es_version >= Gem::Version.new('2.0.0')
+                                   node['os']['load_average']
+                                 else
+                                   node['os']['load_average'][0]
+                                 end
     metrics['os.mem.free_in_bytes'] = node['os']['mem']['free_in_bytes']
     metrics['process.mem.resident_in_bytes'] = node['process']['mem']['resident_in_bytes']
     metrics['jvm.mem.heap_used_in_bytes'] = node['jvm']['mem']['heap_used_in_bytes']

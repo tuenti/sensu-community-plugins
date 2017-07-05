@@ -29,6 +29,7 @@
 require 'sensu-plugin/check/cli'
 require 'rest-client'
 require 'json'
+require 'base64'
 
 #
 # ES Heap
@@ -74,30 +75,58 @@ class ESHeap < Sensu::Plugin::Check::CLI
          description: 'Use the WARNING and CRITICAL threshold numbers as percentage indicators of the total heap available',
          default: false
 
+  option :user,
+         description: 'Elasticsearch User',
+         short: '-u USER',
+         long: '--user USER'
+
+  option :password,
+         description: 'Elasticsearch Password',
+         short: '-W PASS',
+         long: '--password PASS'
+
+  option :https,
+         description: 'Enables HTTPS',
+         short: '-e',
+         long: '--https'
+
   def acquire_es_version
     info = acquire_es_resource('/')
     info['version']['number']
   end
 
   def acquire_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout])
+    headers = {}
+    if config[:user] && config[:password]
+      auth = 'Basic ' + Base64.strict_encode64("#{config[:user]}:#{config[:password]}").chomp
+      headers = { 'Authorization' => auth }
+    end
+
+    protocol = if config[:https]
+                 'https'
+               else
+                 'http'
+               end
+
+    r = RestClient::Resource.new("#{protocol}://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout], headers: headers)
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
   rescue RestClient::RequestTimeout
     warning 'Connection timed out'
+  rescue RestClient::ServiceUnavailable
+    warning 'Service is unavailable'
   rescue JSON::ParserError
     warning 'Elasticsearch API returned invalid JSON'
   end
 
-  def acquire_heap_data(return_max = false) # rubocop:disable all
-    if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      stats = acquire_es_resource('/_nodes/_local/stats?jvm=true')
-      node = stats['nodes'].keys.first
-    else
-      stats = acquire_es_resource('/_cluster/nodes/_local/stats?jvm=true')
-      node = stats['nodes'].keys.first
-    end
+  def acquire_heap_data(return_max = false)
+    stats = if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
+              acquire_es_resource('/_nodes/_local/stats')
+            else
+              acquire_es_resource('/_cluster/nodes/_local/stats')
+            end
+    node = stats['nodes'].keys.first
     begin
       if return_max
         return stats['nodes'][node]['jvm']['mem']['heap_used_in_bytes'], stats['nodes'][node]['jvm']['mem']['heap_max_in_bytes']
@@ -109,7 +138,7 @@ class ESHeap < Sensu::Plugin::Check::CLI
     end
   end
 
-  def run # rubocop:disable all
+  def run
     if config[:percentage]
       heap_used, heap_max = acquire_heap_data(true)
       heap_used_ratio = ((100 * heap_used) / heap_max).to_i
