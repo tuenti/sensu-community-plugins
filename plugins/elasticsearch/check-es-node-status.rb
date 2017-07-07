@@ -4,7 +4,7 @@
 #
 # DESCRIPTION:
 #   This plugin checks the ElasticSearch node status, using its API.
-#   Works with ES 0.9x and ES 1.x
+#   Works with ES 0.9x, ES 1.x, and ES 2.x
 #
 # OUTPUT:
 #   plain text
@@ -30,6 +30,7 @@
 require 'sensu-plugin/check/cli'
 require 'rest-client'
 require 'json'
+require 'base64'
 
 class ESNodeStatus < Sensu::Plugin::Check::CLI
   option :host,
@@ -52,9 +53,36 @@ class ESNodeStatus < Sensu::Plugin::Check::CLI
          proc: proc(&:to_i),
          default: 30
 
+  option :user,
+         description: 'Elasticsearch User',
+         short: '-u USER',
+         long: '--user USER'
+
+  option :password,
+         description: 'Elasticsearch Password',
+         short: '-P PASS',
+         long: '--password PASS'
+
+  option :https,
+         description: 'Enables HTTPS',
+         short: '-e',
+         long: '--https'
+
   def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout])
-    JSON.parse(r.get)
+    headers = {}
+    if config[:user] && config[:password]
+      auth = 'Basic ' + Base64.strict_encode64("#{config[:user]}:#{config[:password]}").chomp
+      headers = { 'Authorization' => auth }
+    end
+
+    protocol = if config[:https]
+                 'https'
+               else
+                 'http'
+               end
+
+    r = RestClient::Resource.new("#{protocol}://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout], headers: headers)
+    r.get
   rescue Errno::ECONNREFUSED
     critical 'Connection refused'
   rescue RestClient::RequestTimeout
@@ -64,15 +92,15 @@ class ESNodeStatus < Sensu::Plugin::Check::CLI
   end
 
   def acquire_status
-    health = get_es_resource('/')
-    health['status'].to_i
+    status = get_es_resource('/').code
+    status
   end
 
   def run
     node_status = acquire_status
 
     if node_status == 200
-      ok "Alive #{(node_status)}"
+      ok "Alive #{node_status}"
     else
       critical "Dead (#{node_status})"
     end

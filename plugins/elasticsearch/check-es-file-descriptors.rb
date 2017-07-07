@@ -29,6 +29,7 @@
 require 'sensu-plugin/check/cli'
 require 'rest-client'
 require 'json'
+require 'base64'
 
 #
 # ES File Descriptiors
@@ -66,17 +67,59 @@ class ESFileDescriptors < Sensu::Plugin::Check::CLI
          proc: proc(&:to_i),
          default: 80
 
+  option :user,
+         description: 'Elasticsearch User',
+         short: '-u USER',
+         long: '--user USER'
+
+  option :password,
+         description: 'Elasticsearch Password',
+         short: '-P PASS',
+         long: '--password PASS'
+
+  option :https,
+         description: 'Enables HTTPS',
+         short: '-e',
+         long: '--https'
+
   def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout])
+    headers = {}
+    if config[:user] && config[:password]
+      auth = 'Basic ' + Base64.strict_encode64("#{config[:user]}:#{config[:password]}").chomp
+      headers = { 'Authorization' => auth }
+    end
+
+    protocol = if config[:https]
+                 'https'
+               else
+                 'http'
+               end
+
+    r = RestClient::Resource.new("#{protocol}://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout], headers: headers)
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
   rescue RestClient::RequestTimeout
     warning 'Connection timed out'
+  rescue RestClient::ServiceUnavailable
+    warning 'Service is unavailable'
+  end
+
+  def acquire_es_version
+    info = get_es_resource('/')
+    info['version']['number']
+  end
+
+  def es_version
+    @es_version ||= Gem::Version.new(acquire_es_version)
   end
 
   def acquire_open_fds
-    stats = get_es_resource('/_nodes/_local/stats?process=true')
+    stats = if es_version < Gem::Version.new('5.0.0')
+              get_es_resource('/_nodes/_local/stats?process=true')
+            else
+              get_es_resource('/_nodes/_local/stats/process')
+            end
     begin
       keys = stats['nodes'].keys
       stats['nodes'][keys[0]]['process']['open_file_descriptors'].to_i
@@ -86,7 +129,13 @@ class ESFileDescriptors < Sensu::Plugin::Check::CLI
   end
 
   def acquire_max_fds
-    info = get_es_resource('/_nodes/_local?process=true')
+    info = if es_version < Gem::Version.new('2.0.0')
+             get_es_resource('/_nodes/_local?process=true')
+           elsif es_version < Gem::Version.new('5.0.0')
+             get_es_resource('/_nodes/_local/stats?process=true')
+           else
+             get_es_resource('/_nodes/_local/stats/process')
+           end
     begin
       keys = info['nodes'].keys
       info['nodes'][keys[0]]['process']['max_file_descriptors'].to_i
@@ -95,7 +144,7 @@ class ESFileDescriptors < Sensu::Plugin::Check::CLI
     end
   end
 
-  def run # rubocop:disable all
+  def run
     open = acquire_open_fds
     max = acquire_max_fds
     used_percent = ((open.to_f / max.to_f) * 100).to_i

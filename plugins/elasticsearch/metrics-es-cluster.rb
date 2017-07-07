@@ -5,7 +5,7 @@
 # DESCRIPTION:
 #   This plugin uses the ES API to collect metrics, producing a JSON
 #   document which is outputted to STDOUT. An exit status of 0 indicates
-#   the plugin has successfully collected and produced.
+#   the plugin has successfully collected and produced metrics.
 #
 # OUTPUT:
 #   metric data
@@ -31,6 +31,7 @@
 require 'sensu-plugin/metric/cli'
 require 'rest-client'
 require 'json'
+require 'base64'
 
 #
 # ES Cluster Metrics
@@ -62,13 +63,52 @@ class ESClusterMetrics < Sensu::Plugin::Metric::CLI::Graphite
          proc: proc(&:to_i),
          default: 30
 
+  option :allow_non_master,
+         description: 'Allow check to run on non-master nodes',
+         short: '-a',
+         long: '--allow-non-master',
+         default: false
+
+  option :enable_percolate,
+         description: 'Enables percolator stats',
+         short: '-o',
+         long: '--enable-percolate',
+         default: false
+
+  option :user,
+         description: 'Elasticsearch User',
+         short: '-u USER',
+         long: '--user USER'
+
+  option :password,
+         description: 'Elasticsearch Password',
+         short: '-P PASS',
+         long: '--password PASS'
+
+  option :https,
+         description: 'Enables HTTPS',
+         short: '-e',
+         long: '--https'
+
   def acquire_es_version
     info = get_es_resource('/')
     info['version']['number']
   end
 
   def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout])
+    headers = {}
+    if config[:user] && config[:password]
+      auth = 'Basic ' + Base64.strict_encode64("#{config[:user]}:#{config[:password]}").chomp
+      headers = { 'Authorization' => auth }
+    end
+
+    protocol = if config[:https]
+                 'https'
+               else
+                 'http'
+               end
+
+    r = RestClient::Resource.new("#{protocol}://#{config[:host]}:#{config[:port]}#{resource}", timeout: config[:timeout], headers: headers)
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
@@ -77,12 +117,16 @@ class ESClusterMetrics < Sensu::Plugin::Metric::CLI::Graphite
   end
 
   def master?
-    state = get_es_resource('/_cluster/state?filter_routing_table=true&filter_metadata=true&filter_indices=true')
-    if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      local = get_es_resource('/_nodes/_local')
-    else
-      local = get_es_resource('/_cluster/nodes/_local')
-    end
+    state = if Gem::Version.new(acquire_es_version) >= Gem::Version.new('3.0.0')
+              get_es_resource('/_cluster/state/master_node')
+            else
+              get_es_resource('/_cluster/state?filter_routing_table=true&filter_metadata=true&filter_indices=true')
+            end
+    local = if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
+              get_es_resource('/_nodes/_local')
+            else
+              get_es_resource('/_cluster/nodes/_local')
+            end
     local['nodes'].keys.first == state['master_node']
   end
 
@@ -93,16 +137,65 @@ class ESClusterMetrics < Sensu::Plugin::Metric::CLI::Graphite
   end
 
   def acquire_document_count
-    document_count = get_es_resource('/_count?q=*:*')
-    document_count['count']
+    document_count = get_es_resource('/_stats/docs')
+    count = document_count['_all']['total']
+    if count.empty?
+      return 0
+    else
+      return count['docs']['count']
+    end
+  end
+
+  def acquire_cluster_metrics
+    cluster_stats = get_es_resource('/_cluster/stats')
+    cluster_metrics = Hash.new { |h, k| h[k] = {} }
+    cluster_metrics['fs']['total_in_bytes'] = cluster_stats['nodes']['fs']['total_in_bytes']
+    cluster_metrics['fs']['free_in_bytes'] = cluster_stats['nodes']['fs']['free_in_bytes']
+    cluster_metrics['fs']['store_in_bytes'] = cluster_stats['indices']['store']['size_in_bytes']
+    cluster_metrics['fs']['disk_reads'] = cluster_stats['nodes']['fs']['disk_reads']
+    cluster_metrics['fs']['disk_writes'] = cluster_stats['nodes']['fs']['disk_writes']
+    cluster_metrics['fs']['disk_read_size_in_bytes'] = cluster_stats['nodes']['fs']['disk_read_size_in_bytes']
+    cluster_metrics['fs']['disk_write_size_in_bytes'] = cluster_stats['nodes']['fs']['disk_write_size_in_bytes']
+    cluster_metrics['fielddata']['memory_size_in_bytes'] = cluster_stats['indices']['fielddata']['memory_size_in_bytes']
+    cluster_metrics['fielddata']['evictions'] = cluster_stats['indices']['fielddata']['evictions']
+
+    # Elasticsearch changed the name filter_cache to query_cache in 2.0+
+    cache_name = Gem::Version.new(acquire_es_version) < Gem::Version.new('2.0.0') ? 'filter_cache' : 'query_cache'
+
+    cluster_metrics[cache_name]['memory_size_in_bytes'] = cluster_stats['indices'][cache_name]['memory_size_in_bytes']
+    cluster_metrics[cache_name]['evictions'] = cluster_stats['indices'][cache_name]['evictions']
+    cluster_metrics['mem'] = cluster_stats['nodes']['jvm']['mem']
+
+    if config[:enable_percolate]
+      cluster_metrics['percolate']['total'] = cluster_stats['indices']['percolate']['total']
+      cluster_metrics['percolate']['time_in_millis'] = cluster_stats['indices']['percolate']['time_in_millis']
+      cluster_metrics['percolate']['queries'] = cluster_stats['indices']['percolate']['queries']
+    end
+    cluster_metrics
+  end
+
+  def acquire_allocation_status
+    cluster_config = get_es_resource('/_cluster/settings')
+    transient_settings = cluster_config['transient']
+    if transient_settings.key?('cluster')
+      return %w(none new_primaries primaries all).index(transient_settings['cluster']['routing']['allocation']['enable'])
+    else
+      return nil
+    end
   end
 
   def run
-    if master?
+    if config[:allow_non_master] || master?
       acquire_health.each do |k, v|
         output(config[:scheme] + '.' + k, v)
       end
+      acquire_cluster_metrics.each do |cluster_metric|
+        cluster_metric[1].each do |k, v|
+          output(config[:scheme] + '.' + cluster_metric[0] + '.' + k, v)
+        end
+      end
       output(config[:scheme] + '.document_count', acquire_document_count)
+      output(config[:scheme] + '.allocation_status', acquire_allocation_status) unless acquire_allocation_status.nil?
     end
     ok
   end

@@ -38,6 +38,7 @@
 require 'sensu-plugin/metric/cli'
 require 'rest-client'
 require 'json'
+require 'base64'
 
 #
 # ES Node Graphite Metrics
@@ -93,8 +94,41 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
          boolean: true,
          default: false
 
+  option :disable_fs_stats,
+         description: 'Disable filesystem statistics',
+         long: '--disable-fs-stats',
+         boolean: true,
+         default: false
+
+  option :user,
+         description: 'Elasticsearch User',
+         short: '-u USER',
+         long: '--user USER'
+
+  option :password,
+         description: 'Elasticsearch Password',
+         short: '-P PASS',
+         long: '--password PASS'
+
+  option :https,
+         description: 'Enables HTTPS',
+         short: '-e',
+         long: '--https'
+
   def get_es_resource(resource)
-    r = RestClient::Resource.new("http://#{config[:server]}:#{config[:port]}#{resource}?pretty", timeout: config[:timeout])
+    headers = {}
+    if config[:user] && config[:password]
+      auth = 'Basic ' + Base64.strict_encode64("#{config[:user]}:#{config[:password]}").chomp
+      headers = { 'Authorization' => auth }
+    end
+
+    protocol = if config[:https]
+                 'https'
+               else
+                 'http'
+               end
+
+    r = RestClient::Resource.new("#{protocol}://#{config[:server]}:#{config[:port]}#{resource}?pretty", timeout: config[:timeout], headers: headers)
     JSON.parse(r.get)
   rescue Errno::ECONNREFUSED
     warning 'Connection refused'
@@ -107,21 +141,31 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
     info['version']['number']
   end
 
-  def run # rubocop:disable all
+  def run
     # invert various stats depending on if some flags are set
     os_stat = !config[:disable_os_stats]
     process_stats = !config[:disable_process_stats]
     jvm_stats = !config[:disable_jvm_stats]
     tp_stats = !config[:disable_thread_pool_stats]
+    fs_stats = !config[:disable_fs_stats]
 
     es_version = Gem::Version.new(acquire_es_version)
 
-    if es_version >= Gem::Version.new('1.0.0')
+    if es_version >= Gem::Version.new('3.0.0')
+      stats_query_array = %w(indices http transport)
+      stats_query_array.push('jvm') if jvm_stats == true
+      stats_query_array.push('os') if os_stat == true
+      stats_query_array.push('process') if process_stats == true
+      stats_query_array.push('thread_pool') if tp_stats == true
+      stats_query_array.push('fs') if fs_stats == true
+      stats_query_string = stats_query_array.join(',')
+    elsif es_version >= Gem::Version.new('1.0.0')
       stats_query_array = %w(indices http network transport thread_pool)
       stats_query_array.push('jvm') if jvm_stats == true
       stats_query_array.push('os') if os_stat == true
       stats_query_array.push('process') if process_stats == true
       stats_query_array.push('tp_stats') if tp_stats == true
+      stats_query_array.push('fs_stats') if fs_stats == true
       stats_query_string = stats_query_array.join(',')
     else
       stats_query_string = [
@@ -134,15 +178,18 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
         "process=#{process_stats}",
         "thread_pool=#{tp_stats}",
         'transport=true',
-        'thread_pool=true'
+        'thread_pool=true',
+        "fs=#{fs_stats}"
       ].join('&')
     end
 
-    if Gem::Version.new(acquire_es_version) >= Gem::Version.new('1.0.0')
-      stats = get_es_resource("/_nodes/_local/stats?#{stats_query_string}")
-    else
-      stats = get_es_resource("/_cluster/nodes/_local/stats?#{stats_query_string}")
-    end
+    stats = if es_version >= Gem::Version.new('3.0.0')
+              get_es_resource("/_nodes/_local/stats/#{stats_query_string}")
+            elsif es_version >= Gem::Version.new('1.0.0')
+              get_es_resource("/_nodes/_local/stats?#{stats_query_string}")
+            else
+              get_es_resource("/_cluster/nodes/_local/stats?#{stats_query_string}")
+            end
 
     timestamp = Time.now.to_i
     node = stats['nodes'].values.first
@@ -150,17 +197,26 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
     metrics = {}
 
     if os_stat
-      metrics['os.load_average']                  = node['os']['load_average'][0]
-      metrics['os.load_average.1']                = node['os']['load_average'][0]
-      metrics['os.load_average.5']                = node['os']['load_average'][1]
-      metrics['os.load_average.15']               = node['os']['load_average'][2]
+      if es_version >= Gem::Version.new('2.0.0')
+        metrics['os.load_average']                  = node['os']['load_average']
+      else
+        metrics['os.load_average']                  = node['os']['load_average'][0]
+        metrics['os.load_average.1']                = node['os']['load_average'][0]
+        metrics['os.load_average.5']                = node['os']['load_average'][1]
+        metrics['os.load_average.15']               = node['os']['load_average'][2]
+        metrics['os.cpu.sys']                       = node['os']['cpu']['sys']
+        metrics['os.cpu.user']                      = node['os']['cpu']['user']
+        metrics['os.cpu.idle']                      = node['os']['cpu']['idle']
+        metrics['os.cpu.usage']                     = node['os']['cpu']['usage']
+        metrics['os.cpu.stolen']                    = node['os']['cpu']['stolen']
+        metrics['os.uptime']                        = node['os']['uptime_in_millis']
+      end
       metrics['os.mem.free_in_bytes']             = node['os']['mem']['free_in_bytes']
-      # ... Process uptime in millis?
-      metrics['os.uptime']                        = node['os']['uptime_in_millis']
     end
 
     if process_stats
-      metrics['process.mem.resident_in_bytes']    = node['process']['mem']['resident_in_bytes']
+      metrics['process.cpu.percent']              = node['process']['cpu']['percent']
+      metrics['process.mem.resident_in_bytes']    = node['process']['mem']['resident_in_bytes'] if node['process']['mem']['resident_in_bytes']
     end
 
     if jvm_stats
@@ -169,7 +225,7 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
       metrics['jvm.mem.max_heap_size_in_bytes']   = 0
 
       node['jvm']['mem']['pools'].each do |k, v|
-        metrics["jvm.mem.#{k.gsub(' ', '_')}.max_in_bytes"] = v['max_in_bytes']
+        metrics["jvm.mem.#{k.tr(' ', '_')}.max_in_bytes"] = v['max_in_bytes']
         metrics['jvm.mem.max_heap_size_in_bytes'] += v['max_in_bytes']
       end
 
@@ -189,12 +245,13 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
 
       metrics['jvm.threads.count']                = node['jvm']['threads']['count']
       metrics['jvm.threads.peak_count']           = node['jvm']['threads']['peak_count']
+      metrics['jvm.uptime']                       = node['jvm']['uptime_in_millis']
     end
 
     node['indices'].each do |type, index|
       index.each do |k, v|
         # #YELLOW
-        unless k =~ /(_time$)/ || v =~ /\d+/ # rubocop:disable IfUnlessModifier
+        unless k =~ /(_time$)/ || v =~ /\d+/
           metrics["indices.#{type}.#{k}"] = v
         end
       end
@@ -202,7 +259,7 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
 
     node['transport'].each do |k, v|
       # #YELLOW
-      unless k =~ /(_size$)/ # rubocop:disable IfUnlessModifier
+      unless k =~ /(_size$)/
         metrics["transport.#{k}"] = v
       end
     end
@@ -210,23 +267,35 @@ class ESNodeGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
     metrics['http.current_open']                = node['http']['current_open']
     metrics['http.total_opened']                = node['http']['total_opened']
 
-    metrics['network.tcp.active_opens']         = node['network']['tcp']['active_opens']
-    metrics['network.tcp.passive_opens']        = node['network']['tcp']['passive_opens']
+    if node['network']
+      metrics['network.tcp.active_opens']         = node['network']['tcp']['active_opens']
+      metrics['network.tcp.passive_opens']        = node['network']['tcp']['passive_opens']
 
-    metrics['network.tcp.in_segs']              = node['network']['tcp']['in_segs']
-    metrics['network.tcp.out_segs']             = node['network']['tcp']['out_segs']
-    metrics['network.tcp.retrans_segs']         = node['network']['tcp']['retrans_segs']
-    metrics['network.tcp.attempt_fails']        = node['network']['tcp']['attempt_fails']
-    metrics['network.tcp.in_errs']              = node['network']['tcp']['in_errs']
-    metrics['network.tcp.out_rsts']             = node['network']['tcp']['out_rsts']
+      metrics['network.tcp.in_segs']              = node['network']['tcp']['in_segs']
+      metrics['network.tcp.out_segs']             = node['network']['tcp']['out_segs']
+      metrics['network.tcp.retrans_segs']         = node['network']['tcp']['retrans_segs']
+      metrics['network.tcp.attempt_fails']        = node['network']['tcp']['attempt_fails']
+      metrics['network.tcp.in_errs']              = node['network']['tcp']['in_errs']
+      metrics['network.tcp.out_rsts']             = node['network']['tcp']['out_rsts']
 
-    metrics['network.tcp.curr_estab']           = node['network']['tcp']['curr_estab']
-    metrics['network.tcp.estab_resets']         = node['network']['tcp']['estab_resets']
+      metrics['network.tcp.curr_estab']           = node['network']['tcp']['curr_estab']
+      metrics['network.tcp.estab_resets']         = node['network']['tcp']['estab_resets']
+    end
 
     if tp_stats
       node['thread_pool'].each do |pool, stat|
         stat.each do |k, v|
           metrics["thread_pool.#{pool}.#{k}"] = v
+        end
+      end
+    end
+
+    if fs_stats
+      node['fs'].each do |fs, fs_value|
+        unless fs =~ /(timestamp|data)/
+          fs_value.each do |k, v|
+            metrics["fs.#{fs}.#{k}"] = v
+          end
         end
       end
     end
