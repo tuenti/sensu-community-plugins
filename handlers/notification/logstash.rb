@@ -49,7 +49,7 @@ class LogstashHandler < Sensu::Handler
     time = Time.now.utc.iso8601
     logstash_msg = {
       :@timestamp    => time,
-      :@version      => 1,
+      :@version      => "1",
       :source        => ::Socket.gethostname,
       :tags          => ["sensu-#{action_to_string}"],
       :message       => @event['check']['output'],
