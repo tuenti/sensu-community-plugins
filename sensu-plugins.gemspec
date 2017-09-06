@@ -11,7 +11,7 @@ Gem::Specification.new do |gem|
   gem.date                  = Date.today.to_s
   gem.platform              = Gem::Platform::RUBY
 
-  gem.files                 = Dir['Rakefile', '{plugins,extensions,handlers,mutators,lib,spec,scripts}/**/*', 'README*', 'LICENSE*', 'CONTRIB*', 'CHANGELOG*']
+  gem.files                 = Dir['Rakefile', '{plugins,handlers,mutators,lib,spec,scripts}/**/*', 'README*', 'LICENSE*', 'CONTRIB*', 'CHANGELOG*']
 
   gem.add_dependency 'sensu-plugin', '1.1.0'
   gem.add_development_dependency 'bundler',           '~> 1.3'

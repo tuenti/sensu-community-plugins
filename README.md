@@ -8,7 +8,7 @@
 
 ![sensu](https://raw.github.com/sensu/sensu/master/sensu-logo.png)
 
-## Community plugins, extensions, and handlers
+## Community plugins, mutators and handlers
 
 This gem contains some example plugins and handlers for Sensu. Most of
 them are implemented in Ruby and use the `sensu-plugin` framework (a
