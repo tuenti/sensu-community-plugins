@@ -1,4 +1,4 @@
-VERSION=2.3.23
+VERSION=2.4.1
 TARGET=deb
 LOGLEVEL="warn"
 NAME=sensu-community-plugins
@@ -9,7 +9,7 @@ URL=$(shell git config remote.origin.url)
 LICENSE="MIT"
 CATEGORY="Monitoring"
 DESCRIPTION="Collection of plugins for Sensu maintained by the community"
-SOURCES=extensions handlers mutators plugins
+SOURCES=handlers mutators plugins
 
 
 .PHONY=package

@@ -179,6 +179,14 @@ class CheckGraphiteData < Sensu::Plugin::Check::CLI
           url_opts[:http_basic_authentication] = [config[:username], pass.chomp]
         end # we don't have both username and password trying without
 
+        no_proxy = ENV["no_proxy"]
+        unless no_proxy.nil?
+          domain_list = no_proxy.split(',')
+          if domain_list.any? { |domain| config[:server].include?(domain) }
+            url_opts[:proxy] = nil
+          end
+        end
+
         handle = open(url, url_opts)
 
         @raw_data = handle.gets
