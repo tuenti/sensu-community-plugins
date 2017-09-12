@@ -183,7 +183,7 @@ class CheckGraphiteData < Sensu::Plugin::Check::CLI
         unless no_proxy.nil?
           domain_list = no_proxy.split(',')
           if domain_list.any? { |domain| config[:server].include?(domain) }
-            url_opts[:proxy] = config[:proxy]
+            url_opts[:proxy] = nil
           end
         end
 
