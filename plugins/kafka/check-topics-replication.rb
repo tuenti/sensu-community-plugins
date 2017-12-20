@@ -44,7 +44,7 @@ class ReplicaTopicCheck < Sensu::Plugin::Check::CLI
             lines.each() do |line|
                 leader = line.gsub!(/[\t ]*Topic:[\t ]*([a-zA-Z0-9\-\_]+)[\t ]*Partition:[\t ]*([0-9]+)[\t ]*Leader:[\t ]*([0-9]+)[\t ]*Replicas:[\t ]*([0-9,]+)[\t ]*Isr:[\t ]*([0-9,]+).*/, '\3')
                 if leader != nil
-                    missing_leaders.push(leader)
+                    missing_leaders.push(leader.strip())
                 end
             end
         end
@@ -61,7 +61,7 @@ class ReplicaTopicCheck < Sensu::Plugin::Check::CLI
             broker_info = zk.get(path:"/brokers/ids/#{id}")[:data]
             json = JSON.parse(broker_info)
 
-            if json["host"] == hostname 
+            if json["host"].include? hostname 
                 kafka_id = id
             end
         }
