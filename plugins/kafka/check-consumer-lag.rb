@@ -125,8 +125,7 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
       topics_to_read.delete_if { |x| config[:topic_excludes].include?(x) } if config[:topic_excludes]
     end
 
-    cmd_offset = "#{kafka_run_class} kafka.tools.ConsumerOffsetChecker --group #{config[:group]} --zookeeper #{config[:zookeeper]}"
-    cmd_offset += " --topic #{topics_to_read.join(',')}" unless topics_to_read.empty?
+    cmd_offset = "#{kafka_run_class} kafka.admin.ConsumerGroupCommand --group #{config[:group]} --zookeeper #{config[:zookeeper]} --describe"
 
     topics = run_offset(cmd_offset).group_by { |h| h[:topic] }
 
