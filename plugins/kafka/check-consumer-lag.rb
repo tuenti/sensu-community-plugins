@@ -28,8 +28,8 @@
 require 'sensu-plugin/check/cli'
 
 class ConsumerLagCheck < Sensu::Plugin::Check::CLI
-  option :group,
-         description: 'Consumer group',
+  option :groups,
+         description: 'Consumer groups',
          short:       '-g NAME',
          long:        '--group NAME',
          required:    true
@@ -40,24 +40,11 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
          long:        '--kafka-home NAME',
          default:     '/opt/kafka'
 
-  option :topic_excludes,
-         description: 'Excludes consumer topics',
-         short:       '-e NAME',
-         long:        '--topic-excludes NAME',
-         proc:        proc { |a| a.split(',') }
-
-  option :autolist,
-         description: 'Auto list topics',
-         short:       '-a VALUE',
-         long:        '--auto-list VALUE',
-         boolean: true,
-         default: true
-
-  option :zookeeper,
-         description: 'ZooKeeper connect string',
-         short:       '-z NAME',
-         long:        '--zookeeper NAME',
-         default:     'localhost:2181'
+  option :bootstrap_servers,
+         description: 'Bootstrap-servers connect string',
+         short:       '-b NAME',
+         long:        '--bootstrap-server NAME',
+         default:     'localhost:9092'
 
   option :warning_over,
          description: 'Warning if metric statistics is over specified value.',
@@ -118,31 +105,26 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
     kafka_run_class = "#{config[:kafka_home]}/bin/kafka-run-class.sh"
     unknown "Can not find #{kafka_run_class}" unless File.exist?(kafka_run_class)
 
-    topics_to_read = []
-    if config[:autolist].to_s == 'true'
-      cmd_topics = "#{kafka_run_class} kafka.admin.TopicCommand --zookeeper #{config[:zookeeper]} --list"
-      topics_to_read = run_topics(cmd_topics)
-      topics_to_read.delete_if { |x| config[:topic_excludes].include?(x) } if config[:topic_excludes]
-    end
+    lags = Array.new
+    config[:groups].split(',').each do |group|
 
-    cmd_offset = "#{kafka_run_class} kafka.admin.ConsumerGroupCommand --group #{config[:group]} --zookeeper #{config[:zookeeper]} --describe"
+      cmd_offset = "#{kafka_run_class} kafka.admin.ConsumerGroupCommand --group #{group} --bootstrap-server #{config[:bootstrap_servers]} --describe"
+      topics = run_offset(cmd_offset).group_by { |h| h[:topic] }
+      critical "Could not found topics/partitions" if topics.empty?
 
-    topics = run_offset(cmd_offset).group_by { |h| h[:topic] }
-
-    critical "Could not found topics/partitions" if topics.empty?
-
-    [:offset, :logsize, :lag].each do |field|
-      topics.map do |k, v|
-        critical "Topic #{k} has partitions with #{field} < 0" unless v.select { |w| w[field].to_i < 0 }.empty?
+      [:offset, :logsize, :lag].each do |field|
+        topics.map do |k, v|
+          critical "Topic #{k} has partitions with #{field} < 0" unless v.select { |w| w[field].to_i < 0 }.empty?
+        end
       end
-    end
 
-    topics.map do |k, v|
-      critical "Topic #{k} has partitions with no owner" unless v.select { |w| w[:owner] == 'none' }.empty?
-    end
+      topics.map do |k, v|
+        critical "Topic #{k} has partitions with no owner" unless v.select { |w| w[:owner] == 'none' }.empty?
+      end
 
-    lags = topics.map do |k, v|
-      Hash[k, v.inject(0) { |a, e| a + e[:lag].to_i }]
+      lags += topics.map do |k, v|
+        Hash[k, v.inject(0) { |a, e| a + e[:lag].to_i }]
+      end
     end
 
     max_lag = lags.map(&:values).flatten.max
@@ -159,22 +141,22 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
         case over_or_under
         when :over
           if max_lag > threshold.to_i
-            msg = "Topics `#{max_topics}` for the group `#{config[:group]}` lag: #{max_lag} (>= #{threshold})"
+            msg = "Topics `#{max_topics}` for the group `#{group}` lag: #{max_lag} (>= #{threshold})"
             send severity, msg
           end
         when :under
           if min_lag < threshold.to_i
-            msg =  "Topics `#{min_topics}` for the group `#{config[:group]}` lag: #{min_lag} (<= #{threshold})"
+            msg =  "Topics `#{min_topics}` for the group `#{group}` lag: #{min_lag} (<= #{threshold})"
             send severity, msg
           end
         end
       end
-    end
 
-    ok "Group `#{config[:group]}`'s lag is ok (#{min_lag}/#{max_lag})"
-
+    ok "Group(s) `#{config[:groups]}`'s lag is ok (min lag #{min_lag} / max lag #{max_lag})"
+  end
   rescue => e
     puts "Error: exception: #{e} - #{e.backtrace}"
     critical
   end
+
 end
