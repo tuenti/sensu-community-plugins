@@ -150,12 +150,12 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
         case over_or_under
         when :over
           if max_lag > threshold.to_i
-            msg = "Topics `#{max_topics}` for the group `#{group}` lag: #{max_lag} (>= #{threshold})"
+            msg = "Topics `#{max_topics}` for the group(s) `#{config[:groups]}` lag: #{max_lag} (>= #{threshold})"
             send severity, msg
           end
         when :under
           if min_lag < threshold.to_i
-            msg =  "Topics `#{min_topics}` for the group `#{group}` lag: #{min_lag} (<= #{threshold})"
+            msg =  "Topics `#{min_topics}` for the group(s) `#{config[:groups]}` lag: #{min_lag} (<= #{threshold})"
             send severity, msg
           end
         end
