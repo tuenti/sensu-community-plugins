@@ -83,9 +83,18 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
 
   # run command and return a hash from the output
   # @param cms [String]
-  def run_offset(cmd)
-    read_lines(cmd).drop(1).map do |line|
-      line_to_hash(line, :group, :topic, :pid, :offset, :logsize, :lag, :owner)
+  def run_offset(cmd, group)
+    lines = read_lines(cmd)
+    lines = lines.drop_while {|line| !line.start_with?("GROUP", "TOPIC")}
+    header = lines.take(1)[0]
+    if (header.strip.split(/\s+/).length == 7) then
+      lines.drop(1).map do |line|
+        line_to_hash(line, :group, :topic, :pid, :offset, :logsize, :lag, :owner)
+      end
+    else
+      lines.drop(1).map do |line|
+        line_to_hash("#{group} #{line}", :group, :topic, :pid, :offset, :logsize, :lag, :consumer, :host, :owner)
+      end
     end
   end
 
@@ -109,7 +118,7 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
     config[:groups].split(',').each do |group|
 
       cmd_offset = "#{kafka_run_class} kafka.admin.ConsumerGroupCommand --group #{group} --bootstrap-server #{config[:bootstrap_servers]} --describe"
-      topics = run_offset(cmd_offset).group_by { |h| h[:topic] }
+      topics = run_offset(cmd_offset, group).group_by { |h| "#{h[:topic]}_#{h[:pid]}" }
       critical "Could not found topics/partitions" if topics.empty?
 
       [:offset, :logsize, :lag].each do |field|
@@ -141,12 +150,12 @@ class ConsumerLagCheck < Sensu::Plugin::Check::CLI
         case over_or_under
         when :over
           if max_lag > threshold.to_i
-            msg = "Topics `#{max_topics}` for the group(s) `#{config[:groups]}` lag: #{max_lag} (>= #{threshold})"
+            msg = "Topics `#{max_topics}` for the group `#{group}` lag: #{max_lag} (>= #{threshold})"
             send severity, msg
           end
         when :under
           if min_lag < threshold.to_i
-            msg =  "Topics `#{min_topics}` for the group(s) `#{config[:groups]}` lag: #{min_lag} (<= #{threshold})"
+            msg =  "Topics `#{min_topics}` for the group `#{group}` lag: #{min_lag} (<= #{threshold})"
             send severity, msg
           end
         end
