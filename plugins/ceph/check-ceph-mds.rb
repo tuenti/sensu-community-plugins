@@ -150,7 +150,7 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
     message_health = run_cmd('ceph health detail')
 
     if message_health.include? "mds cluster is degraded"
-       critical_message += run_cmd('ceph health detail')
+       critical_message += message_health
     end
 
     filesystems.each do |filesystem|
