@@ -174,9 +174,9 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
       critical_message += "#{base_message} less than #{config[:active]} MDS daemons running in up:active state\n" if gids_active.length < config[:active]
 
       if gids_standby.length <= config[:crit]
-        critical_message += "#{base_message} no standby MDS daemons running\n"
+        critical_message += "#{base_message} the number of standby MDS daemons running is less than or equal to #{config[:crit]}\n"
       elsif gids_standby.length <= config[:warn]
-        warning_message  += "#{base_message} not enough standby MDS daemons running\n"
+        warning_message  += "#{base_message} the number of standby MDS daemons running is less than or equal to #{config[:warn]}\n"
       end
 
     end
