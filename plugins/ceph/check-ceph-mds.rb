@@ -76,18 +76,25 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
          proc: proc(&:to_i),
          default: 10
 
+  option :active,
+         short: '-a ACTIVE',
+         long: '--active ACTIVE',
+         description: 'Number of active MDS daemons. Critical if the current number of MDS daemons active is less than ACTIVE',
+         proc: proc(&:to_i),
+         default: 1
+
   option :warn,
          short: '-w WARN',
          long: '--warn WARN',
-         description: 'Warn if the number of MDS daemons running are less than WARN',
-         proc: proc(&:to_f),
+         description: 'Warn if the number of standby MDS daemons running are less than or equal to WARN',
+         proc: proc(&:to_i),
          default: 2
 
   option :crit,
          short: '-c CRIT',
          long: '--critical CRIT',
-         description: 'Critical if the number of MDS daemons running are less than CRIT',
-         proc: proc(&:to_f),
+         description: 'Critical if the number of standby MDS daemons running are less than or equal to CRIT',
+         proc: proc(&:to_i),
          default: 1
 
   option :show_stderr,
@@ -131,18 +138,20 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
     data = JSON.parse(result)
   end
 
-  def general_stats
-    data = get_data('ceph mds stat')
-    filesystems = data['fsmap']['filesystems']
-  end
-
   def run
     critical_message = ''
     warning_message = ''
 
-    filesystems = general_stats()
+    data = get_data('ceph mds stat')
+    filesystems = data['fsmap']['filesystems']
+    standbys = data['fsmap']['standbys']
 
     message = run_cmd('ceph mds stat')
+    message_health = run_cmd('ceph health detail')
+
+    if message_health.include? "mds cluster is degraded"
+       critical_message += message_health
+    end
 
     filesystems.each do |filesystem|
       base_message = "Filesystem #{filesystem['mdsmap']['fs_name']} ID=#{filesystem['id']}"
@@ -151,15 +160,25 @@ class CheckCephMDSHealth < Sensu::Plugin::Check::CLI
       fs_failed = filesystem['mdsmap']['failed'].length
       fs_damaged = filesystem['mdsmap']['damaged'].length
       fs_stopped = filesystem['mdsmap']['stopped'].length
+
       gids = filesystem['mdsmap']['info']
-      gids.any? { |gid, data| not data['state'].start_with?('up:') }
+      gids_active = gids.select { |gid, data| data['state'].start_with?('up:active') }
+      gids_standby = gids.select { |gid, data| data['state'].start_with?('up:standby') }
+      other_standby = standbys.select { |data| data['state'].start_with?('up:standby') }
+      gids_standby.merge!(Hash[other_standby.map { |data| ['standby_%s' % data['gid'], data ]}])
 
       critical_message += "#{base_message} failed\n" if fs_failed > 0
       critical_message += "#{base_message} damaged\n" if fs_damaged > 0
       critical_message += "#{base_message} stopped\n" if fs_stopped > 0
 
-      critical_message += "#{base_message} not enough MDS daemons running\n" if gids.length <= config[:crit]
-      warning_message  += "#{base_message} not enougth standby MDS daemons running\n" if gids.length <= config[:warn]
+      critical_message += "#{base_message} less than #{config[:active]} MDS daemons running in up:active state\n" if gids_active.length < config[:active]
+
+      if gids_standby.length <= config[:crit]
+        critical_message += "#{base_message} the number of standby MDS daemons running is less than or equal to #{config[:crit]}\n"
+      elsif gids_standby.length <= config[:warn]
+        warning_message  += "#{base_message} the number of standby MDS daemons running is less than or equal to #{config[:warn]}\n"
+      end
+
     end
 
     if not critical_message.empty?
