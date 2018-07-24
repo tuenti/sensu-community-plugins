@@ -47,7 +47,7 @@ class CheckSyncrepl < Sensu::Plugin::Check::CLI
   option :hosts,
          short: '-h HOSTS',
          long: '--hosts HOSTS',
-         description: 'Comma seperated list of hosts to compare',
+         description: 'Comma seperated list of hosts to compare, optional port can be defined with :',
          required: true,
          proc: proc { |hosts| hosts.split(',') }
 
@@ -87,9 +87,14 @@ class CheckSyncrepl < Sensu::Plugin::Check::CLI
          proc: proc(&:to_i)
 
   def get_csns(host)
+    port = config[:port]
+    if host.include? ":"
+       host, port = host.split(":")
+       port = port.to_i
+    end
     if config[:user]
       ldap = Net::LDAP.new host: host,
-                           port: config[:port],
+                           port: port,
                            auth: {
                              method: :simple,
                              username: config[:user],
@@ -97,7 +102,7 @@ class CheckSyncrepl < Sensu::Plugin::Check::CLI
                            }
     else
       ldap = Net::LDAP.new host: host,
-                           port: config[:port]
+                           port: port
     end
 
     unless config[:insecure]
